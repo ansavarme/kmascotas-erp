@@ -1,8 +1,8 @@
-// --- IMPORTAR FIREBASE DESDE LA NUBE (CDN) ---
+// --- IMPORTAR FIREBASE ---
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc, query, orderBy, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// --- TUS LLAVES DE SEGURIDAD (Tomadas de tu imagen) ---
+// --- TUS LLAVES (V16) ---
 const firebaseConfig = {
   apiKey: "AIzaSyAQhj2Ad4uxKC1jXWRRoQfR17Gza38QLio",
   authDomain: "kmascotas-db.firebaseapp.com",
@@ -13,7 +13,7 @@ const firebaseConfig = {
   measurementId: "G-YH6FENK3DL"
 };
 
-// INICIALIZAR LA NUBE
+// INICIALIZAR
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
@@ -26,44 +26,32 @@ const GOALS = {
     'pel-sq-p': 20, 'pel-sq-m': 30, 'pel-sq-pit': 30
 };
 
-// VARIABLES GLOBALES PARA DATOS
+// CACHÉ
 let currentDataCache = { cuts: {}, liners: {}, fin: {} };
 let historyDataCache = [];
-let isLocalChange = false; // Para evitar bucles de actualización
+let isLocalChange = false;
 
-// AL CARGAR
 window.onload = () => {
-    // Configurar fecha hoy
     const dateInput = document.getElementById('production-date');
     if(dateInput && !dateInput.value) dateInput.valueAsDate = new Date();
-    
-    // INICIAR ESCUCHAS EN TIEMPO REAL
     listenToCurrentData();
     listenToHistory();
 };
 
-// --- ESCUCHAR DATOS ACTUALES (INPUTS) ---
+// --- ESCUCHAS ---
 function listenToCurrentData() {
-    // Escucha el documento 'estado_actual' en la colección 'produccion_diaria'
     onSnapshot(doc(db, "produccion_diaria", "estado_actual"), (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
-            currentDataCache = data; // Actualizar caché
-            
-            // Si el cambio NO vino de nosotros escribiendo ahora mismo, actualizamos los inputs
-            if (!isLocalChange) {
-                updateInputsFromCloud(data);
-            }
-            // Siempre actualizamos el dashboard
+            currentDataCache = data;
+            if (!isLocalChange) updateInputsFromCloud(data);
             updateDashboard();
         } else {
-            // Si no existe (primera vez), lo creamos vacío
-            saveToCloud({}, true);
+            saveCurrentStateToCloud(); // Crear si no existe
         }
     });
 }
 
-// --- ESCUCHAR HISTORIAL ---
 function listenToHistory() {
     const q = query(collection(db, "historial"), orderBy("date", "asc"));
     onSnapshot(q, (querySnapshot) => {
@@ -76,28 +64,22 @@ function listenToHistory() {
     });
 }
 
-// --- FUNCIONES DE GUARDADO (DEBOUNCE) ---
+// --- GUARDADO AUTOMÁTICO ---
 let saveTimeout;
-// Escuchar inputs del usuario
 document.addEventListener('input', (e) => {
     if(e.target.tagName === 'INPUT' && e.target.type === 'number') {
-        isLocalChange = true; // Marcamos que estamos escribiendo
+        isLocalChange = true;
         clearTimeout(saveTimeout);
-        
-        // Esperamos 1 segundo después de que dejes de escribir para enviar a la nube
         saveTimeout = setTimeout(() => {
             saveCurrentStateToCloud();
-            isLocalChange = false; // Liberamos
+            isLocalChange = false;
         }, 800);
-        
-        // Actualizamos dashboard visualmente de inmediato para que se sienta rápido
         updateLocalCacheFromInputs();
         updateDashboard();
     }
 });
 
 function updateLocalCacheFromInputs() {
-    // Actualizamos el objeto caché con lo que hay en pantalla
     ['cob', 'anti', 'pel', 'htr'].forEach(m => SIZES.forEach(s => currentDataCache.cuts[`${m}-${s}`] = val(`cut-${m}-${s}`)));
     ['taf', 'cod'].forEach(l => SIZES.forEach(s => currentDataCache.liners[`${l}-${s}`] = val(`lin-${l}-${s}`)));
     ['p','m','pit'].forEach(s => currentDataCache.liners[`taf-cap-${s}`] = val(`lin-taf-cap-${s}`));
@@ -108,67 +90,25 @@ async function saveCurrentStateToCloud() {
     updateLocalCacheFromInputs();
     try {
         await setDoc(doc(db, "produccion_diaria", "estado_actual"), currentDataCache);
-        console.log("Guardado en nube");
-    } catch (e) {
-        console.error("Error guardando:", e);
-    }
+    } catch (e) { console.error(e); }
 }
 
-// --- ACTUALIZAR UI DESDE NUBE ---
 function updateInputsFromCloud(data) {
     const safeVal = (obj, key) => (obj && obj[key]) ? obj[key] : '';
-    
-    // Cuts
-    if(data.cuts) Object.keys(data.cuts).forEach(k => {
-        const el = document.getElementById(`cut-${k}`);
-        if(el) el.value = safeVal(data.cuts, k);
-    });
-    // Liners
-    if(data.liners) Object.keys(data.liners).forEach(k => {
-        let id = `lin-${k}`;
-        if(k.startsWith('taf-cap')) id = `lin-${k}`; // corrección ID
-        const el = document.getElementById(id);
-        if(el) el.value = safeVal(data.liners, k);
-    });
-    // Fin
-    if(data.fin) Object.keys(data.fin).forEach(k => {
-        const el = document.getElementById(`fin-${k}`);
-        if(el) el.value = safeVal(data.fin, k);
-    });
+    if(data.cuts) Object.keys(data.cuts).forEach(k => { const el = document.getElementById(`cut-${k}`); if(el) el.value = safeVal(data.cuts, k); });
+    if(data.liners) Object.keys(data.liners).forEach(k => { const el = document.getElementById(`lin-${k}`); if(el) el.value = safeVal(data.liners, k); });
+    if(data.fin) Object.keys(data.fin).forEach(k => { const el = document.getElementById(`fin-${k}`); if(el) el.value = safeVal(data.fin, k); });
 }
 
-// --- DASHBOARD Y VISUALIZACIÓN ---
-function updateDashboard() {
-    // Fusionar historial + datos actuales
-    const merged = mergeData(historyDataCache, currentDataCache);
+// --- ACCIONES PRINCIPALES ---
 
-    renderList('dash-cuts-list', merged.cuts, 'cut');
-    renderList('dash-liners-list', merged.liners, 'lin');
-    renderList('dash-fin-list', merged.fin, 'fin');
-
-    const totalFin = Object.values(merged.fin || {}).reduce((a,b)=>a+b,0);
-    const pct = Math.min((totalFin/META_GLOBAL)*100, 100);
-    
-    const bar = document.getElementById('global-bar');
-    if(bar) bar.style.width = `${pct}%`;
-    
-    const txt = document.getElementById('global-text');
-    if(txt) txt.innerText = `${totalFin} / ${META_GLOBAL} (${Math.round(pct)}%)`;
-    
-    const todayDisp = document.getElementById('total-today-display');
-    const todayTotal = Object.values(currentDataCache.fin || {}).reduce((a,b)=>a+b,0);
-    if(todayDisp) todayDisp.innerText = todayTotal;
-}
-
-// --- CERRAR DÍA (GUARDAR EN HISTORIAL NUBE) ---
-// Hacemos disponible la función globalmente porque type="module" aisla las funciones
+// 1. CERRAR DÍA
 window.saveDay = async function() {
     updateLocalCacheFromInputs();
     const totalToday = Object.values(currentDataCache.fin || {}).reduce((a,b)=>a+b,0);
-    const totalCut = Object.values(currentDataCache.cuts || {}).reduce((a,b)=>a+b,0);
-    const totalLin = Object.values(currentDataCache.liners || {}).reduce((a,b)=>a+b,0);
-
-    if((totalToday+totalCut+totalLin) === 0 && !confirm("¿Guardar día vacío?")) return;
+    const totalActivity = totalToday + Object.values(currentDataCache.cuts||{}).reduce((a,b)=>a+b,0);
+    
+    if(totalActivity === 0 && !confirm("¿Guardar día vacío?")) return;
 
     const entry = {
         date: document.getElementById('production-date').value,
@@ -179,94 +119,75 @@ window.saveDay = async function() {
     };
 
     try {
-        // Guardar en colección 'historial'
         await addDoc(collection(db, "historial"), entry);
-        
-        // Limpiar inputs visuales y en nube
-        const emptyState = { cuts: {}, liners: {}, fin: {} };
-        await setDoc(doc(db, "produccion_diaria", "estado_actual"), emptyState);
-        
-        alert("¡Día cerrado y guardado en la nube!");
-        // No necesitamos recargar ni renderizar manualmente, onSnapshot lo hará
+        await setDoc(doc(db, "produccion_diaria", "estado_actual"), { cuts: {}, liners: {}, fin: {} });
+        alert("✅ Día guardado exitosamente.");
     } catch (e) {
-        console.error("Error cerrando día:", e);
-        alert("Error al guardar en la nube. Revisa tu conexión.");
+        alert("Error al guardar: " + e.message);
     }
 };
 
-// --- EDITAR DÍA ---
+// 2. EDITAR DÍA
 window.editDay = async function(docId) {
     const dayData = historyDataCache.find(d => d.id === docId);
-    if(!dayData) return;
-    
-    if(!confirm(`¿Editar el día ${dayData.date}? Se cargarán los datos y se borrará del historial.`)) return;
+    if(!dayData || !confirm(`¿Editar ${dayData.date}?`)) return;
 
     try {
-        // 1. Cargar datos a la "mesa de trabajo" (estado actual)
         await setDoc(doc(db, "produccion_diaria", "estado_actual"), {
-            cuts: dayData.cuts,
-            liners: dayData.liners,
-            fin: dayData.fin
+            cuts: dayData.cuts, liners: dayData.liners, fin: dayData.fin
         });
-
-        // 2. Poner la fecha en el input
         document.getElementById('production-date').value = dayData.date;
-
-        // 3. Borrar del historial para evitar duplicados
         await deleteDoc(doc(db, "historial", docId));
-
-        alert("Datos cargados. Realiza los cambios y vuelve a 'Cerrar Día'.");
+        alert("Datos cargados para editar.");
         window.scrollTo(0,0);
-    } catch(e) {
-        console.error("Error editando:", e);
-        alert("Error al cargar datos.");
-    }
+    } catch(e) { alert("Error: " + e.message); }
 };
 
-// --- REINICIAR TODO ---
+// 3. REINICIAR SEMANA (AHORA CON "COPIA DE SEGURIDAD")
 window.resetAll = async function() {
-    const password = prompt("Escribe 'BORRAR' para eliminar todo el historial de la nube:");
-    if (password === 'BORRAR') {
-        // Borrar estado actual
-        await setDoc(doc(db, "produccion_diaria", "estado_actual"), { cuts: {}, liners: {}, fin: {} });
-        
-        // Borrar historial (uno por uno porque Firestore no tiene 'borrar colección')
-        historyDataCache.forEach(async (item) => {
-            await deleteDoc(doc(db, "historial", item.id));
-        });
-        alert("Base de datos reiniciada.");
+    const confirmWord = prompt("⚠️ ZONA DE PELIGRO ⚠️\n\nEsta acción cerrará la semana actual.\nPara proteger tus datos, esto NO los borrará, sino que los ARCHIVARÁ en la nube.\n\nEscribe 'ARCHIVAR' para confirmar:");
+    
+    if (confirmWord === 'ARCHIVAR') {
+        try {
+            // A. Crear paquete de archivo
+            const backup = {
+                fecha_cierre: new Date().toISOString(),
+                responsable: "Usuario App",
+                semana_data: historyDataCache // Guardamos todo el historial de la semana
+            };
+
+            // B. Enviar a colección de seguridad 'semanas_cerradas'
+            await addDoc(collection(db, "semanas_cerradas"), backup);
+
+            // C. Ahora sí, limpiamos el tablero de trabajo
+            await setDoc(doc(db, "produccion_diaria", "estado_actual"), { cuts: {}, liners: {}, fin: {} });
+            
+            // D. Borrar el historial visual (pero ya está guardado en el paso B)
+            const deletePromises = historyDataCache.map(item => deleteDoc(doc(db, "historial", item.id)));
+            await Promise.all(deletePromises);
+
+            alert("✅ Semana cerrada correctamente.\n\nLos datos antiguos se han guardado en la carpeta 'semanas_cerradas' en tu base de datos por si los necesitas recuperar.");
+        } catch (e) {
+            console.error(e);
+            alert("❌ Error crítico: No se pudo archivar. No se borró nada por seguridad. Revisa tu internet.");
+        }
     }
 };
 
-// --- GENERAR REPORTE ---
+// --- VISUALES ---
+window.toggleDash = function() { const c = document.getElementById('dash-content'); c.style.display = c.style.display==='none'?'grid':'none'; };
 window.generateSmartReport = function() {
     const merged = mergeData(historyDataCache, currentDataCache);
-    const date = new Date().toLocaleDateString();
-    let csv = `REPORTE KMASCOTAS CLOUD - ${date}\n\nSECCION,DETALLE,CANTIDAD\n`;
-    const addSection = (title, dataObj) => {
-        csv += `\n=== ${title} ===\n`;
-        if(dataObj) for(const [key, val] of Object.entries(dataObj)) {
-            if(val > 0) csv += `${title},${formatLabel(key)},${val}\n`;
-        }
-    };
-    addSection('CORTE', merged.cuts);
-    addSection('FORROS', merged.liners);
-    addSection('CONFECCION', merged.fin);
-
+    let csv = `REPORTE V17 CLOUD - ${new Date().toLocaleDateString()}\n\nSECCION,DETALLE,CANTIDAD\n`;
+    const add = (t, o) => { if(o) for(const [k,v] of Object.entries(o)) if(v>0) csv+=`${t},${formatLabel(k)},${v}\n`; };
+    add('CORTE', merged.cuts); add('FORROS', merged.liners); add('CONFECCION', merged.fin);
     const link = document.createElement("a");
     link.href = "data:text/csv;charset=utf-8," + encodeURI(csv);
     link.download = `Reporte_Cloud_${Date.now()}.csv`;
     link.click();
 };
 
-window.toggleDash = function() { 
-    const c = document.getElementById('dash-content'); 
-    c.style.display = c.style.display==='none'?'grid':'none'; 
-};
-
-// --- UTILIDADES ---
 const val = (id) => parseInt(document.getElementById(id)?.value) || 0;
-
 const formatLabel = (key) => {
     const parts = key.split('-');
     if(parts.length < 3) return key;
@@ -279,85 +200,62 @@ const formatLabel = (key) => {
     return `${mat} ${shape} ${size}`;
 };
 
-function renderList(containerId, dataObj, type) {
-    const container = document.getElementById(containerId);
-    if(!container) return;
-    container.innerHTML = '';
-    
-    const getGoal = (key, type) => {
-        if (type === 'lin') {
-            const parts = key.split('-');
-            if(parts[0] === 'taf' && parts[1] === 'sq') return (GOALS[`cob-${parts[1]}-${parts[2]}`]||0) + (GOALS[`anti-${parts[1]}-${parts[2]}`]||0);
-            if(parts[0] === 'cod' && parts[1] === 'sq') return (GOALS[`pel-${parts[1]}-${parts[2]}`]||0);
+function renderList(cid, obj, type) {
+    const c = document.getElementById(cid); if(!c)return; c.innerHTML='';
+    const getGoal = (k, t) => {
+        if (t === 'lin') {
+            const p = k.split('-');
+            if(p[0]==='taf' && p[1]==='sq') return (GOALS[`cob-${p[1]}-${p[2]}`]||0)+(GOALS[`anti-${p[1]}-${p[2]}`]||0);
+            if(p[0]==='cod' && p[1]==='sq') return (GOALS[`pel-${p[1]}-${p[2]}`]||0);
             return 0;
-        } 
-        let lookupKey = key;
-        if(key.startsWith('pelcod') || key.startsWith('peltaf')) lookupKey = key.replace('pelcod', 'pel').replace('peltaf', 'pel');
-        return GOALS[lookupKey] || 0;
+        }
+        let lk = k;
+        if(k.startsWith('pelcod')||k.startsWith('peltaf')) lk=k.replace('pelcod','pel').replace('peltaf','pel');
+        return GOALS[lk]||0;
     };
-
-    if(dataObj) for (const [key, value] of Object.entries(dataObj)) {
-        const goal = getGoal(key, type);
-        if (value > 0 || goal > 0) { 
-            let displayVal = goal > 0 ? `${value} / ${goal}` : `${value} <span style="font-size:0.7rem; color:#3b82f6;">(Extra)</span>`;
-            let trackHtml = "";
-            if (goal > 0) {
-                let pct = Math.round((value/goal)*100);
-                let color = pct >= 100 ? 'green' : 'yellow';
-                trackHtml = `<div class="mini-track"><div class="mini-fill ${color}" style="width:${Math.min(pct,100)}%"></div></div>`;
-            } else {
-                trackHtml = `<div class="mini-track"><div class="mini-fill blue" style="width:100%"></div></div>`;
-            }
-            const row = document.createElement('div');
-            row.className = 'stat-row';
-            row.innerHTML = `<div class="stat-header"><span class="stat-name">${formatLabel(key)}</span><span class="stat-val">${displayVal}</span></div>${trackHtml}`;
-            container.appendChild(row);
+    if(obj) for(const [k,v] of Object.entries(obj)) {
+        const g = getGoal(k,type);
+        if(v>0 || g>0) {
+            let trk = '', valTxt = g>0 ? `${v} / ${g}` : `${v} <span style='font-size:0.7rem;color:#3b82f6'>(Extra)</span>`;
+            if(g>0) { let p=Math.round((v/g)*100); trk=`<div class="mini-track"><div class="mini-fill ${p>=100?'green':'yellow'}" style="width:${Math.min(p,100)}%"></div></div>`; }
+            else { trk=`<div class="mini-track"><div class="mini-fill blue" style="width:100%"></div></div>`; }
+            const r = document.createElement('div'); r.className='stat-row';
+            r.innerHTML = `<div class="stat-header"><span class="stat-name">${formatLabel(k)}</span><span class="stat-val">${valTxt}</span></div>${trk}`;
+            c.appendChild(r);
         }
     }
 }
 
-function renderHistoryTable() {
-    const tbody = document.getElementById('history-body');
-    if(!tbody) return;
+function updateDashboard() {
+    const merged = mergeData(historyDataCache, currentDataCache);
+    renderList('dash-cuts-list', merged.cuts, 'cut');
+    renderList('dash-liners-list', merged.liners, 'lin');
+    renderList('dash-fin-list', merged.fin, 'fin');
     
-    const generateTags = (obj) => {
-        let tags = [];
-        if(obj) for(const [k,v] of Object.entries(obj)) {
-            if(v > 0) tags.push(`<b>${v}</b> ${formatLabel(k)}`);
-        }
-        return tags.join(', ');
-    };
+    const tot = Object.values(merged.fin||{}).reduce((a,b)=>a+b,0);
+    const p = Math.min((tot/META_GLOBAL)*100, 100);
+    const bar = document.getElementById('global-bar'); if(bar) bar.style.width=`${p}%`;
+    const txt = document.getElementById('global-text'); if(txt) txt.innerText=`${tot} / ${META_GLOBAL} (${Math.round(p)}%)`;
+    const tday = document.getElementById('total-today-display');
+    if(tday) tday.innerText = Object.values(currentDataCache.fin||{}).reduce((a,b)=>a+b,0);
+}
 
-    tbody.innerHTML = historyDataCache.map((d) => {
-        const cutsStr = generateTags(d.cuts);
-        const linersStr = generateTags(d.liners);
-        const finStr = generateTags(d.fin);
-
-        let detailsHtml = "";
-        if(cutsStr) detailsHtml += `<div class="hist-block hist-cut"><span class="hist-label">✂️ Corte:</span><span class="hist-content">${cutsStr}</span></div>`;
-        if(linersStr) detailsHtml += `<div class="hist-block hist-lin"><span class="hist-label">🧵 Forros:</span><span class="hist-content">${linersStr}</span></div>`;
-        if(finStr) detailsHtml += `<div class="hist-block hist-fin"><span class="hist-label">👕 Conf:</span><span class="hist-content">${finStr}</span></div>`;
-        
-        if(!detailsHtml) detailsHtml = "<em style='color:#cbd5e1'>Sin registro</em>";
-
-        return `
-        <tr>
-            <td style="font-weight:bold; color:#1e293b">${d.date}</td>
-            <td style="text-align:center; font-size:1.1rem; color:var(--primary)">${d.total}</td>
-            <td>${detailsHtml}</td>
-            <td><button class="btn-edit" onclick="editDay('${d.id}')"><i class="fas fa-pen"></i> Editar</button></td>
-        </tr>`;
+function renderHistoryTable() {
+    const b = document.getElementById('history-body'); if(!b)return;
+    const tag = (o) => { let t=[]; if(o)for(const [k,v] of Object.entries(o)) if(v>0) t.push(`<b>${v}</b> ${formatLabel(k)}`); return t.join(', '); };
+    b.innerHTML = historyDataCache.map(d => {
+        let h = "";
+        const c=tag(d.cuts), l=tag(d.liners), f=tag(d.fin);
+        if(c) h+=`<div class="hist-block hist-cut"><span class="hist-label">✂️ Corte:</span><span class="hist-content">${c}</span></div>`;
+        if(l) h+=`<div class="hist-block hist-lin"><span class="hist-label">🧵 Forros:</span><span class="hist-content">${l}</span></div>`;
+        if(f) h+=`<div class="hist-block hist-fin"><span class="hist-label">👕 Conf:</span><span class="hist-content">${f}</span></div>`;
+        if(!h) h="<em style='color:#cbd5e1'>-</em>";
+        return `<tr><td style="font-weight:bold;color:#1e293b">${d.date}</td><td style="text-align:center;font-size:1.1rem;color:var(--primary)">${d.total}</td><td>${h}</td><td><button class="btn-edit" onclick="editDay('${d.id}')"><i class="fas fa-pen"></i> Editar</button></td></tr>`;
     }).join('');
 }
 
-function mergeData(history, current) {
-    const merged = { cuts: {}, liners: {}, fin: {} };
-    const add = (src) => {
-        ['cuts', 'liners', 'fin'].forEach(cat => {
-            if(src && src[cat]) for(const [k,v] of Object.entries(src[cat])) merged[cat][k] = (merged[cat][k]||0)+v;
-        });
-    };
-    history.forEach(add);
-    add(current);
-    return merged;
+function mergeData(h, c) {
+    const m = { cuts: {}, liners: {}, fin: {} };
+    const add = (s) => { ['cuts','liners','fin'].forEach(cat => { if(s && s[cat]) for(const [k,v] of Object.entries(s[cat])) m[cat][k]=(m[cat][k]||0)+v; }); };
+    h.forEach(add); add(c); return m;
 }
