@@ -2,7 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc, query, orderBy, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// --- TUS LLAVES (V16) ---
+// --- TUS LLAVES ---
 const firebaseConfig = {
   apiKey: "AIzaSyAQhj2Ad4uxKC1jXWRRoQfR17Gza38QLio",
   authDomain: "kmascotas-db.firebaseapp.com",
@@ -19,6 +19,7 @@ const db = getFirestore(app);
 
 // CONSTANTES
 const META_GLOBAL = 380;
+// Incluye XL en tamaños
 const SIZES = ['sq-p', 'sq-m', 'sq-pit', 'sq-xl', 'rd-p', 'rd-m', 'rd-pit', 'rd-xl'];
 const GOALS = {
     'cob-sq-p': 50, 'cob-sq-m': 50, 'cob-sq-pit': 50,
@@ -33,10 +34,38 @@ let isLocalChange = false;
 
 window.onload = () => {
     const dateInput = document.getElementById('production-date');
+    // Poner fecha hoy si está vacío
     if(dateInput && !dateInput.value) dateInput.valueAsDate = new Date();
+    
+    // Listener especial para cambio de fecha (TU SOLICITUD V18)
+    dateInput.addEventListener('change', handleDateChange);
+
     listenToCurrentData();
     listenToHistory();
 };
+
+// --- LÓGICA DE CAMBIO DE FECHA ---
+async function handleDateChange() {
+    // Verificar si hay datos en pantalla
+    const hasData = Object.values(currentDataCache.cuts||{}).some(v=>v>0) ||
+                    Object.values(currentDataCache.liners||{}).some(v=>v>0) ||
+                    Object.values(currentDataCache.fin||{}).some(v=>v>0);
+
+    if (hasData) {
+        // Preguntar al usuario qué hacer
+        const cleanScreen = confirm("📅 CAMBIO DE FECHA DETECTADO\n\n¿Deseas LIMPIAR la pantalla para empezar este nuevo día desde cero?\n\n[Aceptar] = Borrar todo y empezar nuevo día.\n[Cancelar] = Mantener los datos (solo corregir fecha).");
+        
+        if (cleanScreen) {
+            // Borrar nube y local
+            currentDataCache = { cuts: {}, liners: {}, fin: {} };
+            updateInputsFromCloud(currentDataCache); // Limpieza visual inmediata
+            updateDashboard();
+            try {
+                await setDoc(doc(db, "produccion_diaria", "estado_actual"), currentDataCache);
+            } catch(e) { console.error("Error limpiando:", e); }
+        }
+    }
+}
 
 // --- ESCUCHAS ---
 function listenToCurrentData() {
@@ -47,7 +76,7 @@ function listenToCurrentData() {
             if (!isLocalChange) updateInputsFromCloud(data);
             updateDashboard();
         } else {
-            saveCurrentStateToCloud(); // Crear si no existe
+            saveCurrentStateToCloud(); 
         }
     });
 }
@@ -94,19 +123,36 @@ async function saveCurrentStateToCloud() {
 }
 
 function updateInputsFromCloud(data) {
+    // Función auxiliar para limpiar todos los inputs primero si la data viene vacía
+    if (!data.cuts && !data.liners && !data.fin) {
+        document.querySelectorAll('input[type="number"]').forEach(i => i.value = "");
+        return;
+    }
+
     const safeVal = (obj, key) => (obj && obj[key]) ? obj[key] : '';
-    if(data.cuts) Object.keys(data.cuts).forEach(k => { const el = document.getElementById(`cut-${k}`); if(el) el.value = safeVal(data.cuts, k); });
-    if(data.liners) Object.keys(data.liners).forEach(k => { const el = document.getElementById(`lin-${k}`); if(el) el.value = safeVal(data.liners, k); });
-    if(data.fin) Object.keys(data.fin).forEach(k => { const el = document.getElementById(`fin-${k}`); if(el) el.value = safeVal(data.fin, k); });
+    // Recorremos inputs y asignamos valor o vacío
+    document.querySelectorAll('input[type="number"]').forEach(input => {
+        // Intentar mapear ID a estructura de datos
+        // IDs son como: cut-cob-sq-p
+        const parts = input.id.split('-');
+        const prefix = parts[0]; // cut, lin, fin
+        const key = parts.slice(1).join('-'); // cob-sq-p
+        
+        let val = '';
+        if (prefix === 'cut' && data.cuts) val = safeVal(data.cuts, key);
+        if (prefix === 'lin' && data.liners) val = safeVal(data.liners, key);
+        if (prefix === 'fin' && data.fin) val = safeVal(data.fin, key);
+        
+        input.value = val;
+    });
 }
 
 // --- ACCIONES PRINCIPALES ---
 
-// 1. CERRAR DÍA
 window.saveDay = async function() {
     updateLocalCacheFromInputs();
     const totalToday = Object.values(currentDataCache.fin || {}).reduce((a,b)=>a+b,0);
-    const totalActivity = totalToday + Object.values(currentDataCache.cuts||{}).reduce((a,b)=>a+b,0);
+    const totalActivity = totalToday + Object.values(currentDataCache.cuts||{}).reduce((a,b)=>a+b,0) + Object.values(currentDataCache.liners||{}).reduce((a,b)=>a+b,0);
     
     if(totalActivity === 0 && !confirm("¿Guardar día vacío?")) return;
 
@@ -120,57 +166,50 @@ window.saveDay = async function() {
 
     try {
         await addDoc(collection(db, "historial"), entry);
-        await setDoc(doc(db, "produccion_diaria", "estado_actual"), { cuts: {}, liners: {}, fin: {} });
+        // Limpiar estado actual
+        currentDataCache = { cuts: {}, liners: {}, fin: {} };
+        await setDoc(doc(db, "produccion_diaria", "estado_actual"), currentDataCache);
         alert("✅ Día guardado exitosamente.");
     } catch (e) {
         alert("Error al guardar: " + e.message);
     }
 };
 
-// 2. EDITAR DÍA
 window.editDay = async function(docId) {
     const dayData = historyDataCache.find(d => d.id === docId);
     if(!dayData || !confirm(`¿Editar ${dayData.date}?`)) return;
 
     try {
+        // Cargar datos a estado actual
         await setDoc(doc(db, "produccion_diaria", "estado_actual"), {
             cuts: dayData.cuts, liners: dayData.liners, fin: dayData.fin
         });
-        document.getElementById('production-date').value = dayData.date;
+        
+        // Desactivamos temporalmente el listener de fecha para que no pregunte al cambiarla programáticamente
+        const dateInput = document.getElementById('production-date');
+        dateInput.removeEventListener('change', handleDateChange);
+        dateInput.value = dayData.date;
+        setTimeout(() => dateInput.addEventListener('change', handleDateChange), 500); // Reactivar
+
         await deleteDoc(doc(db, "historial", docId));
-        alert("Datos cargados para editar.");
+        alert("Datos cargados. Realiza los cambios y vuelve a 'Cerrar Día'.");
         window.scrollTo(0,0);
     } catch(e) { alert("Error: " + e.message); }
 };
 
-// 3. REINICIAR SEMANA (AHORA CON "COPIA DE SEGURIDAD")
 window.resetAll = async function() {
-    const confirmWord = prompt("⚠️ ZONA DE PELIGRO ⚠️\n\nEsta acción cerrará la semana actual.\nPara proteger tus datos, esto NO los borrará, sino que los ARCHIVARÁ en la nube.\n\nEscribe 'ARCHIVAR' para confirmar:");
-    
+    const confirmWord = prompt("⚠️ ¿ARCHIVAR SEMANA?\n\nEscribe 'ARCHIVAR' para guardar todo en seguridad y limpiar el tablero:");
     if (confirmWord === 'ARCHIVAR') {
         try {
-            // A. Crear paquete de archivo
-            const backup = {
-                fecha_cierre: new Date().toISOString(),
-                responsable: "Usuario App",
-                semana_data: historyDataCache // Guardamos todo el historial de la semana
-            };
-
-            // B. Enviar a colección de seguridad 'semanas_cerradas'
-            await addDoc(collection(db, "semanas_cerradas"), backup);
-
-            // C. Ahora sí, limpiamos el tablero de trabajo
+            await addDoc(collection(db, "semanas_cerradas"), {
+                fecha: new Date().toISOString(),
+                data: historyDataCache
+            });
             await setDoc(doc(db, "produccion_diaria", "estado_actual"), { cuts: {}, liners: {}, fin: {} });
-            
-            // D. Borrar el historial visual (pero ya está guardado en el paso B)
             const deletePromises = historyDataCache.map(item => deleteDoc(doc(db, "historial", item.id)));
             await Promise.all(deletePromises);
-
-            alert("✅ Semana cerrada correctamente.\n\nLos datos antiguos se han guardado en la carpeta 'semanas_cerradas' en tu base de datos por si los necesitas recuperar.");
-        } catch (e) {
-            console.error(e);
-            alert("❌ Error crítico: No se pudo archivar. No se borró nada por seguridad. Revisa tu internet.");
-        }
+            alert("✅ Semana archivada y reiniciada.");
+        } catch (e) { alert("Error al archivar."); }
     }
 };
 
@@ -178,12 +217,12 @@ window.resetAll = async function() {
 window.toggleDash = function() { const c = document.getElementById('dash-content'); c.style.display = c.style.display==='none'?'grid':'none'; };
 window.generateSmartReport = function() {
     const merged = mergeData(historyDataCache, currentDataCache);
-    let csv = `REPORTE V17 CLOUD - ${new Date().toLocaleDateString()}\n\nSECCION,DETALLE,CANTIDAD\n`;
+    let csv = `REPORTE V18 - ${new Date().toLocaleDateString()}\n\nSECCION,DETALLE,CANTIDAD\n`;
     const add = (t, o) => { if(o) for(const [k,v] of Object.entries(o)) if(v>0) csv+=`${t},${formatLabel(k)},${v}\n`; };
     add('CORTE', merged.cuts); add('FORROS', merged.liners); add('CONFECCION', merged.fin);
     const link = document.createElement("a");
     link.href = "data:text/csv;charset=utf-8," + encodeURI(csv);
-    link.download = `Reporte_Cloud_${Date.now()}.csv`;
+    link.download = `Reporte_${Date.now()}.csv`;
     link.click();
 };
 
@@ -224,20 +263,6 @@ function renderList(cid, obj, type) {
             c.appendChild(r);
         }
     }
-}
-
-function updateDashboard() {
-    const merged = mergeData(historyDataCache, currentDataCache);
-    renderList('dash-cuts-list', merged.cuts, 'cut');
-    renderList('dash-liners-list', merged.liners, 'lin');
-    renderList('dash-fin-list', merged.fin, 'fin');
-    
-    const tot = Object.values(merged.fin||{}).reduce((a,b)=>a+b,0);
-    const p = Math.min((tot/META_GLOBAL)*100, 100);
-    const bar = document.getElementById('global-bar'); if(bar) bar.style.width=`${p}%`;
-    const txt = document.getElementById('global-text'); if(txt) txt.innerText=`${tot} / ${META_GLOBAL} (${Math.round(p)}%)`;
-    const tday = document.getElementById('total-today-display');
-    if(tday) tday.innerText = Object.values(currentDataCache.fin||{}).reduce((a,b)=>a+b,0);
 }
 
 function renderHistoryTable() {
