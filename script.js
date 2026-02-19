@@ -42,7 +42,7 @@ window.onload = () => {
     listenToHistory();
 };
 
-// --- FUNCIÓN ESCOBA: BORRA VISUALMENTE TODO (NUEVO V20) ---
+// --- FUNCIÓN ESCOBA: BORRA VISUALMENTE TODO ---
 function clearLocalUI() {
     const inputs = document.querySelectorAll('input[type="number"]');
     inputs.forEach(i => i.value = ""); // Vaciar visualmente
@@ -50,7 +50,7 @@ function clearLocalUI() {
     // Vaciar memoria caché
     currentDataCache = { cuts: {}, liners: {}, fin: {} };
     
-    // Actualizar totales visuales a 0
+    // Actualizar totales visuales a 0 (ESTA ERA LA FUNCIÓN QUE FALTABA)
     updateDashboard();
 }
 
@@ -134,15 +134,30 @@ function updateInputsFromCloud(data) {
         if (prefix === 'lin' && data.liners && data.liners[key]) val = data.liners[key];
         if (prefix === 'fin' && data.fin && data.fin[key]) val = data.fin[key];
 
-        // Solo sobreescribir si el valor es diferente para evitar saltos
         if(input.value != val) input.value = val;
     });
+}
+
+// --- DASHBOARD (ESTA ES LA QUE FALTABA) ---
+function updateDashboard() {
+    const merged = mergeData(historyDataCache, currentDataCache);
+
+    renderList('dash-cuts-list', merged.cuts, 'cut');
+    renderList('dash-liners-list', merged.liners, 'lin');
+    renderList('dash-fin-list', merged.fin, 'fin');
+
+    const tot = Object.values(merged.fin||{}).reduce((a,b)=>a+b,0);
+    const p = Math.min((tot/META_GLOBAL)*100, 100);
+    const bar = document.getElementById('global-bar'); if(bar) bar.style.width=`${p}%`;
+    const txt = document.getElementById('global-text'); if(txt) txt.innerText=`${tot} / ${META_GLOBAL} (${Math.round(p)}%)`;
+    const tday = document.getElementById('total-today-display');
+    if(tday) tday.innerText = Object.values(currentDataCache.fin||{}).reduce((a,b)=>a+b,0);
 }
 
 // --- ACCIONES PRINCIPALES ---
 
 window.saveDay = async function() {
-    updateLocalCacheFromInputs(); // Asegurar tener lo último escrito
+    updateLocalCacheFromInputs();
     const totalToday = Object.values(currentDataCache.fin || {}).reduce((a,b)=>a+b,0);
     const totalActivity = totalToday + Object.values(currentDataCache.cuts||{}).reduce((a,b)=>a+b,0) + Object.values(currentDataCache.liners||{}).reduce((a,b)=>a+b,0);
     
@@ -157,13 +172,10 @@ window.saveDay = async function() {
     };
 
     try {
-        // 1. Guardar historial
         await addDoc(collection(db, "historial"), entry);
         
-        // 2. BORRADO VISUAL INMEDIATO (Lo que pediste)
+        // BORRADO VISUAL + NUBE
         clearLocalUI();
-        
-        // 3. Borrado en Nube
         await setDoc(doc(db, "produccion_diaria", "estado_actual"), { cuts: {}, liners: {}, fin: {} });
         
         alert("✅ Día guardado correctamente.");
@@ -182,10 +194,8 @@ window.editDay = async function(docId) {
         });
         
         const dateInput = document.getElementById('production-date');
-        // Desactivar listener temporalmente para que no borre al cambiar fecha
         dateInput.removeEventListener('change', handleDateChange);
         dateInput.value = dayData.date;
-        // Reactivar listener después
         setTimeout(() => dateInput.addEventListener('change', handleDateChange), 1000);
 
         await deleteDoc(doc(db, "historial", docId));
@@ -202,14 +212,10 @@ window.resetAll = async function() {
                 fecha: new Date().toISOString(),
                 data: historyDataCache
             });
-            
-            // Borrado visual + Nube
             clearLocalUI();
             await setDoc(doc(db, "produccion_diaria", "estado_actual"), { cuts: {}, liners: {}, fin: {} });
-            
             const deletePromises = historyDataCache.map(item => deleteDoc(doc(db, "historial", item.id)));
             await Promise.all(deletePromises);
-            
             alert("✅ Semana archivada y reiniciada.");
         } catch (e) { alert("Error al archivar."); }
     }
@@ -219,7 +225,7 @@ window.resetAll = async function() {
 window.toggleDash = function() { const c = document.getElementById('dash-content'); c.style.display = c.style.display==='none'?'grid':'none'; };
 window.generateSmartReport = function() {
     const merged = mergeData(historyDataCache, currentDataCache);
-    let csv = `REPORTE V20 - ${new Date().toLocaleDateString()}\n\nSECCION,DETALLE,CANTIDAD\n`;
+    let csv = `REPORTE V21 - ${new Date().toLocaleDateString()}\n\nSECCION,DETALLE,CANTIDAD\n`;
     const add = (t, o) => { if(o) for(const [k,v] of Object.entries(o)) if(v>0) csv+=`${t},${formatLabel(k)},${v}\n`; };
     add('CORTE', merged.cuts); add('FORROS', merged.liners); add('CONFECCION', merged.fin);
     const link = document.createElement("a");
