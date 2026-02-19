@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kmascotas V15 | HTR + XL</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+
+    <div class="sticky-wrapper">
+        <header class="main-header">
+            <div class="brand">
+                <h1>Kmascotas <span style="color:var(--success)">V15</span></h1>
+                <div class="date-container">
+                    <i class="fas fa-calendar-alt"></i> 
+                    <input type="date" id="production-date">
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="btn-report" onclick="generateSmartReport()">
+                    <i class="fas fa-file-excel"></i> Informe
+                </button>
+            </div>
+        </header>
+
+        <div class="global-progress-bar">
+            <div class="meta-info">
+                <span>META GLOBAL (380)</span>
+                <span id="global-text">0%</span>
+            </div>
+            <div class="progress-track global">
+                <div id="global-bar" class="progress-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <main class="dashboard-container">
+
+        <section class="panel weekly-dashboard">
+            <h2 class="panel-title" onclick="toggleDash()">
+                <i class="fas fa-chart-pie"></i> Dashboard Semanal (Ver Detalles)
+            </h2>
+            <div id="dash-content" class="dashboard-grid" style="display:none;">
+                <div class="dash-col">
+                    <h3>✂️ Telas Cortadas</h3>
+                    <div id="dash-cuts-list" class="stats-list"></div>
+                </div>
+                <div class="dash-col">
+                    <h3>🧵 Forros Cortados</h3>
+                    <div id="dash-liners-list" class="stats-list"></div>
+                </div>
+                <div class="dash-col">
+                    <h3>👕 Confección (Venta)</h3>
+                    <div id="dash-fin-list" class="stats-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2 class="panel-title">1. Corte Telas Principales</h2>
+            
+            <div class="material-group">
+                <h3 class="mat-title">Cobija <span class="goal-tag">Meta: 50</span></h3>
+                <div class="row-input">
+                    <span class="label-row">Cuadrada</span>
+                    <input type="number" id="cut-cob-sq-p" placeholder="P">
+                    <input type="number" id="cut-cob-sq-m" placeholder="M">
+                    <input type="number" id="cut-cob-sq-pit" placeholder="PIT">
+                </div>
+                <div class="row-input">
+                    <span class="label-row">Redonda</span>
+                    <input type="number" id="cut-cob-rd-p" placeholder="P">
+                    <input type="number" id="cut-cob-rd-m" placeholder="M">
+                    <input type="number" id="cut-cob-rd-pit" placeholder="PIT">
+                </div>
+            </div>
+
+            <div class="material-group">
+                <h3 class="mat-title">Antifluido <span class="goal-tag">Meta: 50</span></h3>
+                <div class="row-input">
+                    <span class="label-row">Cuadrada</span>
+                    <input type="number" id="cut-anti-sq-p" placeholder="P">
+                    <input type="number" id="cut-anti-sq-m" placeholder="M">
+                    <input type="number" id="cut-anti-sq-pit" placeholder="PIT">
+                </div>
+                <div class="row-input">
+                    <span class="label-row">Redonda</span>
+                    <input type="number" id="cut-anti-rd-p" placeholder="P">
+                    <input type="number" id="cut-anti-rd-m" placeholder="M">
+                    <input type="number" id="cut-anti-rd-pit" placeholder="PIT">
+                </div>
+            </div>
+
+            <div class="material-group">
+                <h3 class="mat-title">Peluche <span class="goal-tag">Meta: 20/30</span></h3>
+                <div class="row-input">
+                    <span class="label-row">Cuadrada</span>
+                    <input type="number" id="cut-pel-sq-p" placeholder="P">
+                    <input type="number" id="cut-pel-sq-m" placeholder="M">
+                    <input type="number" id="cut-pel-sq-pit" placeholder="PIT">
+                </div>
+                <div class="row-input">
+                    <span class="label-row">Redonda</span>
+                    <input type="number" id="cut-pel-rd-p" placeholder="P">
+                    <input type="number" id="cut-pel-rd-m" placeholder="M">
+                    <input type="number" id="cut-pel-rd-pit" placeholder="PIT">
+                </div>
+            </div>
+
+            <div class="material-group" style="border-left: 4px solid #475569;">
+                <h3 class="mat-title">TELA HTR <span class="goal-tag">Nueva</span></h3>
+                <div class="row-input">
+                    <span class="label-row">Cuadrada</span>
+                    <input type="number" id="cut-htr-sq-p" placeholder="P">
+                    <input type="number" id="cut-htr-sq-m" placeholder="M">
+                    <input type="number" id="cut-htr-sq-pit" placeholder="PIT">
+                    <input type="number" id="cut-htr-sq-xl" placeholder="XL" style="background:#f1f5f9; border-color:#94a3b8">
+                </div>
+                <div class="row-input">
+                    <span class="label-row">Redonda</span>
+                    <input type="number" id="cut-htr-rd-p" placeholder="P">
+                    <input type="number" id="cut-htr-rd-m" placeholder="M">
+                    <input type="number" id="cut-htr-rd-pit" placeholder="PIT">
+                    <input type="number" id="cut-htr-rd-xl" placeholder="XL" style="background:#f1f5f9; border-color:#94a3b8">
+                </div>
+            </div>
+        </section>
+
+        <section class="panel highlight">
+            <h2 class="panel-title">2. Corte Forros</h2>
+            <div class="material-group dark">
+                <h3 class="mat-title text-white">TAFETA <small>(Cob+Anti+Encap)</small></h3>
+                <div class="row-input">
+                    <span class="label-row text-white">Cuadrada</span>
+                    <input type="number" id="lin-taf-sq-p" placeholder="P">
+                    <input type="number" id="lin-taf-sq-m" placeholder="M">
+                    <input type="number" id="lin-taf-sq-pit" placeholder="PIT">
+                </div>
+                <div class="row-input">
+                    <span class="label-row text-white">Redonda</span>
+                    <input type="number" id="lin-taf-rd-p" placeholder="P">
+                    <input type="number" id="lin-taf-rd-m" placeholder="M">
+                    <input type="number" id="lin-taf-rd-pit" placeholder="PIT">
+                </div>
+                 <div class="row-input" style="background:#334155; padding:5px; margin-top:5px; border-radius:4px;">
+                    <span class="label-row text-white" style="width:auto; margin-right:10px;">⚡ MOLDES ENCAP:</span>
+                    <input type="number" id="lin-taf-cap-p" placeholder="P">
+                    <input type="number" id="lin-taf-cap-m" placeholder="M">
+                    <input type="number" id="lin-taf-cap-pit" placeholder="PIT">
+                </div>
+            </div>
+
+            <div class="material-group dark">
+                <h3 class="mat-title text-white">CODRA <small>(Pel+Encap+HTR)</small></h3>
+                <div class="row-input">
+                    <span class="label-row text-white">Cuadrada</span>
+                    <input type="number" id="lin-cod-sq-p" placeholder="P">
+                    <input type="number" id="lin-cod-sq-m" placeholder="M">
+                    <input type="number" id="lin-cod-sq-pit" placeholder="PIT">
+                    <input type="number" id="lin-cod-sq-xl" placeholder="XL" style="background:#475569; color:#fff;">
+                </div>
+                 <div class="row-input">
+                    <span class="label-row text-white">Redonda</span>
+                    <input type="number" id="lin-cod-rd-p" placeholder="P">
+                    <input type="number" id="lin-cod-rd-m" placeholder="M">
+                    <input type="number" id="lin-cod-rd-pit" placeholder="PIT">
+                    <input type="number" id="lin-cod-rd-xl" placeholder="XL" style="background:#475569; color:#fff;">
+                </div>
+            </div>
+        </section>
+
+        <section class="panel success-panel">
+            <h2 class="panel-title">3. Camas Terminadas</h2>
+            
+            <div class="material-group success-group">
+                <h3 class="mat-title">Cobija</h3>
+                <div class="row-input">
+                    <span class="label-row">Cuadrada</span>
+                    <input type="number" id="fin-cob-sq-p" placeholder="P">
+                    <input type="number" id="fin-cob-sq-m" placeholder="M">
+                    <input type="number" id="fin-cob-sq-pit" placeholder="PIT">
+                </div>
+                <div class="row-input">
+                    <span class="label-row">Redonda</span>
+                    <input type="number" id="fin-cob-rd-p" placeholder="P">
+                    <input type="number" id="fin-cob-rd-m" placeholder="M">
+                    <input type="number" id="fin-cob-rd-pit" placeholder="PIT">
+                </div>
+            </div>
+
+            <div class="material-group success-group">
+                <h3 class="mat-title">Antifluido</h3>
+                <div class="row-input">
+                    <span class="label-row">Cuadrada</span>
+                    <input type="number" id="fin-anti-sq-p" placeholder="P">
+                    <input type="number" id="fin-anti-sq-m" placeholder="M">
+                    <input type="number" id="fin-anti-sq-pit" placeholder="PIT">
+                </div>
+                <div class="row-input">
+                    <span class="label-row">Redonda</span>
+                    <input type="number" id="fin-anti-rd-p" placeholder="P">
+                    <input type="number" id="fin-anti-rd-m" placeholder="M">
+                    <input type="number" id="fin-anti-rd-pit" placeholder="PIT">
+                </div>
+            </div>
+
+            <div class="material-group success-group" style="border-left: 4px solid #f59e0b;">
+                <h3 class="mat-title">Peluche + CODRA</h3>
+                <div class="row-input">
+                    <span class="label-row">Cuadrada</span>
+                    <input type="number" id="fin-pelcod-sq-p" placeholder="P">
+                    <input type="number" id="fin-pelcod-sq-m" placeholder="M">
+                    <input type="number" id="fin-pelcod-sq-pit" placeholder="PIT">
+                </div>
+                <div class="row-input">
+                    <span class="label-row">Redonda</span>
+                    <input type="number" id="fin-pelcod-rd-p" placeholder="P">
+                    <input type="number" id="fin-pelcod-rd-m" placeholder="M">
+                    <input type="number" id="fin-pelcod-rd-pit" placeholder="PIT">
+                </div>
+            </div>
+            
+            <div class="material-group success-group" style="border-left: 4px solid #3b82f6;">
+                <h3 class="mat-title">Peluche + TAFETA</h3>
+                <div class="row-input">
+                    <span class="label-row">Cuadrada</span>
+                    <input type="number" id="fin-peltaf-sq-p" placeholder="P">
+                    <input type="number" id="fin-peltaf-sq-m" placeholder="M">
+                    <input type="number" id="fin-peltaf-sq-pit" placeholder="PIT">
+                </div>
+                <div class="row-input">
+                    <span class="label-row">Redonda</span>
+                    <input type="number" id="fin-peltaf-rd-p" placeholder="P">
+                    <input type="number" id="fin-peltaf-rd-m" placeholder="M">
+                    <input type="number" id="fin-peltaf-rd-pit" placeholder="PIT">
+                </div>
+            </div>
+
+            <div class="material-group success-group" style="border-left: 4px solid #8b5cf6;">
+                <h3 class="mat-title">ENCAPSULADA</h3>
+                <div class="row-input">
+                    <span class="label-row">Cuadrada</span>
+                    <input type="number" id="fin-encap-sq-p" placeholder="P">
+                    <input type="number" id="fin-encap-sq-m" placeholder="M">
+                    <input type="number" id="fin-encap-sq-pit" placeholder="PIT">
+                </div>
+                 <div class="row-input">
+                    <span class="label-row">Redonda</span>
+                    <input type="number" id="fin-encap-rd-p" placeholder="P">
+                    <input type="number" id="fin-encap-rd-m" placeholder="M">
+                    <input type="number" id="fin-encap-rd-pit" placeholder="PIT">
+                </div>
+            </div>
+
+            <div class="material-group success-group" style="border-left: 4px solid #475569;">
+                <h3 class="mat-title">HTR (Confeccionada)</h3>
+                <div class="row-input">
+                    <span class="label-row">Cuadrada</span>
+                    <input type="number" id="fin-htr-sq-p" placeholder="P">
+                    <input type="number" id="fin-htr-sq-m" placeholder="M">
+                    <input type="number" id="fin-htr-sq-pit" placeholder="PIT">
+                    <input type="number" id="fin-htr-sq-xl" placeholder="XL" style="background:#f1f5f9; border-color:#94a3b8">
+                </div>
+                 <div class="row-input">
+                    <span class="label-row">Redonda</span>
+                    <input type="number" id="fin-htr-rd-p" placeholder="P">
+                    <input type="number" id="fin-htr-rd-m" placeholder="M">
+                    <input type="number" id="fin-htr-rd-pit" placeholder="PIT">
+                    <input type="number" id="fin-htr-rd-xl" placeholder="XL" style="background:#f1f5f9; border-color:#94a3b8">
+                </div>
+            </div>
+            
+            <div class="total-bar">
+                TOTAL HOY: <span id="total-today-display">0</span>
+            </div>
+        </section>
+
+        <section class="panel history-section">
+            <div class="flex-between">
+                <h3>Historial de Producción</h3>
+                <button class="btn-primary" onclick="saveDay()">💾 Cerrar Día</button>
+            </div>
+            <div class="table-container">
+                <table id="history-table">
+                    <thead>
+                        <tr>
+                            <th style="width:20%">Fecha</th>
+                            <th style="width:10%">Total</th>
+                            <th style="width:55%">Detalle</th>
+                            <th style="width:15%">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <div class="floating-reset">
+        <button class="btn-danger" onclick="resetAll()">⚠️ Reiniciar</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
