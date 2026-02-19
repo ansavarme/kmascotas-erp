@@ -19,7 +19,6 @@ const db = getFirestore(app);
 
 // CONSTANTES
 const META_GLOBAL = 380;
-// Incluye XL en tamaños
 const SIZES = ['sq-p', 'sq-m', 'sq-pit', 'sq-xl', 'rd-p', 'rd-m', 'rd-pit', 'rd-xl'];
 const GOALS = {
     'cob-sq-p': 50, 'cob-sq-m': 50, 'cob-sq-pit': 50,
@@ -34,17 +33,16 @@ let isLocalChange = false;
 
 window.onload = () => {
     const dateInput = document.getElementById('production-date');
-    // Poner fecha hoy si está vacío
     if(dateInput && !dateInput.value) dateInput.valueAsDate = new Date();
     
-    // Listener especial para cambio de fecha (TU SOLICITUD V18)
+    // Listener cambio de fecha
     dateInput.addEventListener('change', handleDateChange);
 
     listenToCurrentData();
     listenToHistory();
 };
 
-// --- LÓGICA DE CAMBIO DE FECHA ---
+// --- LÓGICA DE CAMBIO DE FECHA CORREGIDA ---
 async function handleDateChange() {
     // Verificar si hay datos en pantalla
     const hasData = Object.values(currentDataCache.cuts||{}).some(v=>v>0) ||
@@ -52,14 +50,17 @@ async function handleDateChange() {
                     Object.values(currentDataCache.fin||{}).some(v=>v>0);
 
     if (hasData) {
-        // Preguntar al usuario qué hacer
-        const cleanScreen = confirm("📅 CAMBIO DE FECHA DETECTADO\n\n¿Deseas LIMPIAR la pantalla para empezar este nuevo día desde cero?\n\n[Aceptar] = Borrar todo y empezar nuevo día.\n[Cancelar] = Mantener los datos (solo corregir fecha).");
+        const cleanScreen = confirm("📅 CAMBIO DE FECHA DETECTADO\n\n¿Deseas LIMPIAR la pantalla para el nuevo día?\n\n[Aceptar] = BORRAR TODO (Empezar de cero).\n[Cancelar] = MANTENER DATOS (Solo corregir fecha).");
         
         if (cleanScreen) {
-            // Borrar nube y local
+            // 1. Limpiar caché local
             currentDataCache = { cuts: {}, liners: {}, fin: {} };
-            updateInputsFromCloud(currentDataCache); // Limpieza visual inmediata
+            
+            // 2. Limpiar visualmente INMEDIATAMENTE
+            updateInputsFromCloud(currentDataCache);
             updateDashboard();
+            
+            // 3. Limpiar en la nube
             try {
                 await setDoc(doc(db, "produccion_diaria", "estado_actual"), currentDataCache);
             } catch(e) { console.error("Error limpiando:", e); }
@@ -122,27 +123,26 @@ async function saveCurrentStateToCloud() {
     } catch (e) { console.error(e); }
 }
 
+// --- FUNCIÓN CORREGIDA V19: LIMPIEZA TOTAL ---
 function updateInputsFromCloud(data) {
-    // Función auxiliar para limpiar todos los inputs primero si la data viene vacía
-    if (!data.cuts && !data.liners && !data.fin) {
-        document.querySelectorAll('input[type="number"]').forEach(i => i.value = "");
-        return;
-    }
-
-    const safeVal = (obj, key) => (obj && obj[key]) ? obj[key] : '';
-    // Recorremos inputs y asignamos valor o vacío
-    document.querySelectorAll('input[type="number"]').forEach(input => {
-        // Intentar mapear ID a estructura de datos
-        // IDs son como: cut-cob-sq-p
+    // Recorremos TODOS los inputs de la pantalla, no solo los datos
+    const allInputs = document.querySelectorAll('input[type="number"]');
+    
+    allInputs.forEach(input => {
+        // Desglosamos el ID: cut-cob-sq-p
         const parts = input.id.split('-');
+        if(parts.length < 2) return;
+
         const prefix = parts[0]; // cut, lin, fin
         const key = parts.slice(1).join('-'); // cob-sq-p
-        
-        let val = '';
-        if (prefix === 'cut' && data.cuts) val = safeVal(data.cuts, key);
-        if (prefix === 'lin' && data.liners) val = safeVal(data.liners, key);
-        if (prefix === 'fin' && data.fin) val = safeVal(data.fin, key);
-        
+
+        let val = ''; // Por defecto VACÍO
+
+        // Si existe el dato en la nube, lo ponemos. Si no, se queda vacío.
+        if (prefix === 'cut' && data.cuts && data.cuts[key]) val = data.cuts[key];
+        if (prefix === 'lin' && data.liners && data.liners[key]) val = data.liners[key];
+        if (prefix === 'fin' && data.fin && data.fin[key]) val = data.fin[key];
+
         input.value = val;
     });
 }
@@ -180,16 +180,15 @@ window.editDay = async function(docId) {
     if(!dayData || !confirm(`¿Editar ${dayData.date}?`)) return;
 
     try {
-        // Cargar datos a estado actual
         await setDoc(doc(db, "produccion_diaria", "estado_actual"), {
             cuts: dayData.cuts, liners: dayData.liners, fin: dayData.fin
         });
         
-        // Desactivamos temporalmente el listener de fecha para que no pregunte al cambiarla programáticamente
         const dateInput = document.getElementById('production-date');
+        // Hack temporal para que el listener no salte
         dateInput.removeEventListener('change', handleDateChange);
         dateInput.value = dayData.date;
-        setTimeout(() => dateInput.addEventListener('change', handleDateChange), 500); // Reactivar
+        setTimeout(() => dateInput.addEventListener('change', handleDateChange), 500);
 
         await deleteDoc(doc(db, "historial", docId));
         alert("Datos cargados. Realiza los cambios y vuelve a 'Cerrar Día'.");
@@ -217,7 +216,7 @@ window.resetAll = async function() {
 window.toggleDash = function() { const c = document.getElementById('dash-content'); c.style.display = c.style.display==='none'?'grid':'none'; };
 window.generateSmartReport = function() {
     const merged = mergeData(historyDataCache, currentDataCache);
-    let csv = `REPORTE V18 - ${new Date().toLocaleDateString()}\n\nSECCION,DETALLE,CANTIDAD\n`;
+    let csv = `REPORTE V19 - ${new Date().toLocaleDateString()}\n\nSECCION,DETALLE,CANTIDAD\n`;
     const add = (t, o) => { if(o) for(const [k,v] of Object.entries(o)) if(v>0) csv+=`${t},${formatLabel(k)},${v}\n`; };
     add('CORTE', merged.cuts); add('FORROS', merged.liners); add('CONFECCION', merged.fin);
     const link = document.createElement("a");
