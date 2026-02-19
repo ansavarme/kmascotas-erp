@@ -42,30 +42,27 @@ window.onload = () => {
     listenToHistory();
 };
 
-// --- LÓGICA DE CAMBIO DE FECHA CORREGIDA ---
-async function handleDateChange() {
-    // Verificar si hay datos en pantalla
-    const hasData = Object.values(currentDataCache.cuts||{}).some(v=>v>0) ||
-                    Object.values(currentDataCache.liners||{}).some(v=>v>0) ||
-                    Object.values(currentDataCache.fin||{}).some(v=>v>0);
+// --- FUNCIÓN ESCOBA: BORRA VISUALMENTE TODO (NUEVO V20) ---
+function clearLocalUI() {
+    const inputs = document.querySelectorAll('input[type="number"]');
+    inputs.forEach(i => i.value = ""); // Vaciar visualmente
+    
+    // Vaciar memoria caché
+    currentDataCache = { cuts: {}, liners: {}, fin: {} };
+    
+    // Actualizar totales visuales a 0
+    updateDashboard();
+}
 
-    if (hasData) {
-        const cleanScreen = confirm("📅 CAMBIO DE FECHA DETECTADO\n\n¿Deseas LIMPIAR la pantalla para el nuevo día?\n\n[Aceptar] = BORRAR TODO (Empezar de cero).\n[Cancelar] = MANTENER DATOS (Solo corregir fecha).");
-        
-        if (cleanScreen) {
-            // 1. Limpiar caché local
-            currentDataCache = { cuts: {}, liners: {}, fin: {} };
-            
-            // 2. Limpiar visualmente INMEDIATAMENTE
-            updateInputsFromCloud(currentDataCache);
-            updateDashboard();
-            
-            // 3. Limpiar en la nube
-            try {
-                await setDoc(doc(db, "produccion_diaria", "estado_actual"), currentDataCache);
-            } catch(e) { console.error("Error limpiando:", e); }
-        }
-    }
+// --- LÓGICA DE CAMBIO DE FECHA ---
+async function handleDateChange() {
+    // 1. Borrar visualmente INMEDIATAMENTE
+    clearLocalUI();
+
+    // 2. Limpiar en la nube (silenciosamente)
+    try {
+        await setDoc(doc(db, "produccion_diaria", "estado_actual"), { cuts: {}, liners: {}, fin: {} });
+    } catch(e) { console.error("Error limpiando nube:", e); }
 }
 
 // --- ESCUCHAS ---
@@ -74,6 +71,7 @@ function listenToCurrentData() {
         if (docSnap.exists()) {
             const data = docSnap.data();
             currentDataCache = data;
+            // Solo actualizamos si NO estamos escribiendo nosotros
             if (!isLocalChange) updateInputsFromCloud(data);
             updateDashboard();
         } else {
@@ -123,34 +121,28 @@ async function saveCurrentStateToCloud() {
     } catch (e) { console.error(e); }
 }
 
-// --- FUNCIÓN CORREGIDA V19: LIMPIEZA TOTAL ---
 function updateInputsFromCloud(data) {
-    // Recorremos TODOS los inputs de la pantalla, no solo los datos
     const allInputs = document.querySelectorAll('input[type="number"]');
-    
     allInputs.forEach(input => {
-        // Desglosamos el ID: cut-cob-sq-p
         const parts = input.id.split('-');
         if(parts.length < 2) return;
+        const prefix = parts[0]; 
+        const key = parts.slice(1).join('-'); 
 
-        const prefix = parts[0]; // cut, lin, fin
-        const key = parts.slice(1).join('-'); // cob-sq-p
-
-        let val = ''; // Por defecto VACÍO
-
-        // Si existe el dato en la nube, lo ponemos. Si no, se queda vacío.
+        let val = '';
         if (prefix === 'cut' && data.cuts && data.cuts[key]) val = data.cuts[key];
         if (prefix === 'lin' && data.liners && data.liners[key]) val = data.liners[key];
         if (prefix === 'fin' && data.fin && data.fin[key]) val = data.fin[key];
 
-        input.value = val;
+        // Solo sobreescribir si el valor es diferente para evitar saltos
+        if(input.value != val) input.value = val;
     });
 }
 
 // --- ACCIONES PRINCIPALES ---
 
 window.saveDay = async function() {
-    updateLocalCacheFromInputs();
+    updateLocalCacheFromInputs(); // Asegurar tener lo último escrito
     const totalToday = Object.values(currentDataCache.fin || {}).reduce((a,b)=>a+b,0);
     const totalActivity = totalToday + Object.values(currentDataCache.cuts||{}).reduce((a,b)=>a+b,0) + Object.values(currentDataCache.liners||{}).reduce((a,b)=>a+b,0);
     
@@ -165,11 +157,16 @@ window.saveDay = async function() {
     };
 
     try {
+        // 1. Guardar historial
         await addDoc(collection(db, "historial"), entry);
-        // Limpiar estado actual
-        currentDataCache = { cuts: {}, liners: {}, fin: {} };
-        await setDoc(doc(db, "produccion_diaria", "estado_actual"), currentDataCache);
-        alert("✅ Día guardado exitosamente.");
+        
+        // 2. BORRADO VISUAL INMEDIATO (Lo que pediste)
+        clearLocalUI();
+        
+        // 3. Borrado en Nube
+        await setDoc(doc(db, "produccion_diaria", "estado_actual"), { cuts: {}, liners: {}, fin: {} });
+        
+        alert("✅ Día guardado correctamente.");
     } catch (e) {
         alert("Error al guardar: " + e.message);
     }
@@ -185,10 +182,11 @@ window.editDay = async function(docId) {
         });
         
         const dateInput = document.getElementById('production-date');
-        // Hack temporal para que el listener no salte
+        // Desactivar listener temporalmente para que no borre al cambiar fecha
         dateInput.removeEventListener('change', handleDateChange);
         dateInput.value = dayData.date;
-        setTimeout(() => dateInput.addEventListener('change', handleDateChange), 500);
+        // Reactivar listener después
+        setTimeout(() => dateInput.addEventListener('change', handleDateChange), 1000);
 
         await deleteDoc(doc(db, "historial", docId));
         alert("Datos cargados. Realiza los cambios y vuelve a 'Cerrar Día'.");
@@ -197,16 +195,21 @@ window.editDay = async function(docId) {
 };
 
 window.resetAll = async function() {
-    const confirmWord = prompt("⚠️ ¿ARCHIVAR SEMANA?\n\nEscribe 'ARCHIVAR' para guardar todo en seguridad y limpiar el tablero:");
+    const confirmWord = prompt("⚠️ ¿ARCHIVAR SEMANA?\n\nEscribe 'ARCHIVAR' para reiniciar:");
     if (confirmWord === 'ARCHIVAR') {
         try {
             await addDoc(collection(db, "semanas_cerradas"), {
                 fecha: new Date().toISOString(),
                 data: historyDataCache
             });
+            
+            // Borrado visual + Nube
+            clearLocalUI();
             await setDoc(doc(db, "produccion_diaria", "estado_actual"), { cuts: {}, liners: {}, fin: {} });
+            
             const deletePromises = historyDataCache.map(item => deleteDoc(doc(db, "historial", item.id)));
             await Promise.all(deletePromises);
+            
             alert("✅ Semana archivada y reiniciada.");
         } catch (e) { alert("Error al archivar."); }
     }
@@ -216,7 +219,7 @@ window.resetAll = async function() {
 window.toggleDash = function() { const c = document.getElementById('dash-content'); c.style.display = c.style.display==='none'?'grid':'none'; };
 window.generateSmartReport = function() {
     const merged = mergeData(historyDataCache, currentDataCache);
-    let csv = `REPORTE V19 - ${new Date().toLocaleDateString()}\n\nSECCION,DETALLE,CANTIDAD\n`;
+    let csv = `REPORTE V20 - ${new Date().toLocaleDateString()}\n\nSECCION,DETALLE,CANTIDAD\n`;
     const add = (t, o) => { if(o) for(const [k,v] of Object.entries(o)) if(v>0) csv+=`${t},${formatLabel(k)},${v}\n`; };
     add('CORTE', merged.cuts); add('FORROS', merged.liners); add('CONFECCION', merged.fin);
     const link = document.createElement("a");
